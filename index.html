@@ -1,0 +1,442 @@
+<!doctype html>
+<html>
+<head>
+	<title>Manage Coupon</title>
+	<meta charset="utf-8">
+	<style>
+	body{
+		font-family: verdana; font-size: 12px;
+	}
+	table{
+ 			padding-top: .5cm;
+		}
+ 	table, th, td {
+		    border: 1px solid #b6b6b6;
+		    border-collapse: collapse;		   
+		}
+	#sortName, #sortByEndDate, #sortByStartDate, #sortByStatus, #sortByEAN, #sortByDiscount{background-color:#b6b6b6;cursor: pointer; cursor: hand;}
+
+      #barcodeTarget,
+      #canvasTarget{
+        margin-top: 20px;
+      }      
+	</style>
+	<script src="jquery.min.js"></script>
+    <script type="text/javascript" src="jquery-barcode.js"></script>
+
+  	<link rel="stylesheet" href="jquery-ui.css">
+ 	
+  	<script src="jquery-ui.js"></script>
+
+		<!-- just necessary for syntax highlight -->
+		
+	<script src='shCore.js' type='text/javascript'></script>
+    <script type="text/javascript" src="jquery.maskMoney.js"></script>
+</head>
+<body>
+	<p><button type="button" id="show">Create Coupon</button><button type="button" id="removeData">remove local storage</button></p>
+	<table id='tform'>
+	<form id="myform">
+	  <tr>
+	    <td>EAN Code</td>
+	    <td><div id="barcodeTarget" class="barcodeTarget"></div>
+    		<canvas id="canvasTarget" width="150" height="150"></canvas> 
+	    <input type="text" name="ean" id="ean" readonly ></td>
+	    <td>Action Name</td>
+	    <td><input type="text" name="action" id="action"></td>
+	  </tr>
+	  <tr>
+	    <td>Start Date</td>
+	    <td><input type="text" id="startDate" ></td>
+	    <td>End Date</td>
+	    <td><input type="text" id="endDate"></td>
+	  </tr>
+	  <tr>
+	    <td>Discount Value €</td>
+	    <td><input type="text" id="disValue"  name="disValue" /></td>
+	    <td>Status</td>
+	    <td><input type="radio" name="status" value="active" id="statusActive" checked> active
+	    	<input type="radio" name="status" value="inactive" id="statusInactive">inactive</td>
+	  </tr>
+	  <tr>
+	    <td></td>
+	    <td></td>
+	    <td></td>
+	    <td><input type="button" name="generate" id="generate" value="Generate" ></td>
+	  </tr>
+	  </form>
+	</table>
+	
+	<p></p>
+	<div>
+		<table style="width:100%;" id="records">
+		<thead>
+		  <tr>
+		    <td id="sortByEAN">EAN CODE</td>
+		    <td id="sortName">SORT BY COUPEN NAME</td>
+		    <td id="sortByStartDate">SORT BY START DATE</td>
+		    <td id="sortByEndDate">END DATE</td>
+		    <td id="sortByDiscount">VALUE</td>
+		    <td id="sortByStatus">STATUS</td>
+		    <td>EDIT</td>
+		    <td>DELETE</td>
+		  </tr>
+		  </thead>
+		</table>
+	</div>
+	<script type="text/javascript">
+	var backCouponInfo = [];
+	var getPosition = "";
+	var editingActive = 0;
+	
+	$(document).ready(function(){
+	    $("#tform").hide();
+	    $("input#ean").hide();
+	    init();	   
+	    $("#disValue").maskMoney({thousands:',', decimal:'.', allowZero: true, suffix: ' €'}); 
+
+	    $( "#startDate" ).datepicker();
+    	$( "#endDate" ).datepicker();
+		$( "#startDate" ).datepicker( "option", "dateFormat", "dd/mm/yy" );
+		$( "#endDate" ).datepicker( "option", "dateFormat", "dd/mm/yy" );
+	});
+
+	
+	// calling this function for remove record, make new records and on loadpage
+	//$("#generate").click(function() {
+  
+	$( "#generate" ).on( "click", validateForm );
+
+	function isDate(str) {    
+	  var parms = str.split(/[\.\-\/]/);
+	  var yyyy = parseInt(parms[2],10);
+	  var mm   = parseInt(parms[1],10);
+	  var dd   = parseInt(parms[0],10);
+	  var date = new Date(yyyy,mm-1,dd,0,0,0,0);
+	  return mm === (date.getMonth()+1) && dd === date.getDate() && yyyy === date.getFullYear();
+	}
+
+	function validateForm(){
+
+		var eanCodeNum = $("#ean").val();
+	    var actionName = $("#action").val();
+	    if(actionName == ""){
+	    	alert("Please give name");
+	    	$("#action").focus();
+	    	return false;
+	    }
+	    var sdate = $("#startDate").val();
+	    
+	    if(isDate(sdate) != "1"){
+	    	alert("Please select the Starting Date");
+	    	$("#startDate").focus();
+	    	return false;
+	    }
+	    var edate = $("#endDate").val();
+
+	    if(isDate(edate) != "1"){
+	    	alert("Please select the End Date");
+	    	$("#endDate").focus();
+	    	return false;
+	    }
+	    //if(sdate >= edate)
+	    var dateStrA = sdate.replace( /(\d{2})\/(\d{2})\/(\d{4})/, "$2/$1/$3");
+		var dateStrE = edate.replace( /(\d{2})\/(\d{2})\/(\d{4})/, "$2/$1/$3");
+
+	    if(new Date(dateStrA) > new Date(dateStrE))
+		{
+		    alert('End date should be greater than Start date');
+		    $("#endDate").focus();
+	    	return false;
+		}
+		
+
+	    var discountValue = $("#disValue").val();
+	    if(discountValue == "" || discountValue == "0.00 €"){
+	    	alert("Please give Discount price");
+	    	$("#disValue").focus();
+	    	return false;
+	    }
+	    clickGenerate();
+	}
+
+	function clickGenerate() {
+
+		
+		$("#records > tbody").empty();
+		
+		//storing localstorage to existingEntries
+		var existingEntries = JSON.parse(localStorage.getItem("allEntries"));
+		if(existingEntries == null)  existingEntries = [];
+	    if(editingActive == "1"){
+	    	editingActive = 0;
+	    	//getPosition = "";
+	    }
+		//taking all data from form
+	    var eanCodeNum = $("#ean").val();
+	    var actionName = $("#action").val();
+	    var sdate = $("#startDate").val();
+	    var edate = $("#endDate").val();
+	    var discountValue = $("#disValue").val();
+	    var sstatus = $('input[name=status]:checked').val();
+	    var entry = {
+	        "id" :$.now(),
+	    	"eanCodeNum" : eanCodeNum,
+	    	"actionName" : actionName,
+	    	"sdate" : sdate,
+	    	"edate" : edate,
+	    	"discountValue" : discountValue,
+	    	"sstatus" : sstatus
+	    };
+	    
+	    //checking if its fake enrty
+	    $("#barcodeTarget").empty();
+	    $('#myform')[0].reset();
+	    if (eanCodeNum === ""){
+
+	    } else if(getPosition != "" || getPosition == "0") {
+	    	// for editing the existing row
+	    	existingEntries[getPosition] = entry;
+	    	$("#tform").hide();
+	    	getPosition = "";
+	    	
+	    } else { 
+	    	//// adding new row
+	    	existingEntries.push(entry);
+	    	$("#barcodeTarget").empty();
+	    	$("#tform").hide();
+	    } 
+	    $("#tform").hide();
+	    showRecords(existingEntries);
+	    
+	    //console.log("test");
+
+	    $("#records").show();
+	//}
+	}
+
+	// function for create coupon
+	$("#show").click(function(){
+		var random = Math.floor(Math.random()*8999999999+1000000000);
+		var preRandom = "981"+random.toString();
+
+		$('#myform')[0].reset();
+        $("#tform").show();
+        generateBarcode(preRandom);
+        $("#ean").val($('#barcodeTarget').children().last().text());
+        getPosition = "";
+        editingActive = 0;
+	});
+	$("#removeData").click(function(){
+	    localStorage.clear()
+	    $("#records").hide();
+	    $("#tform").hide();
+
+	});
+
+	//Running on page load
+	function init() {
+		//var eanCode = $("#ean").val();
+		var existingEntries = JSON.parse(localStorage.getItem("allEntries"));
+		if(existingEntries == null){
+			$("#records").hide();
+			return;
+		} else {
+			clickGenerate();
+		}
+	}
+
+	$(document).on("click",".modify", function() { 
+		var inputID = $(this).attr('id');
+		 
+		findingPosition($(this).attr('value'));
+		if(inputID == "removeRow"){ 
+
+			backCouponInfo.splice(getPosition,1);
+			localStorage.setItem("allEntries", JSON.stringify(backCouponInfo));
+			$('#myform')[0].reset();
+			getPosition="";
+			clickGenerate();
+		} else { 
+			$("#tform").show();
+
+			editingActive = 1;
+			$("#ean").val(backCouponInfo[getPosition].eanCodeNum);
+			$("#barcodeTarget").barcode(backCouponInfo[getPosition].eanCodeNum, "ean13",{barWidth:1, barHeight:50, width:115});
+			$("#canvasTarget").css('display','none');
+			$("#action").val(backCouponInfo[getPosition].actionName);
+			$("#startDate").val(backCouponInfo[getPosition].sdate);
+			$("#endDate").val(backCouponInfo[getPosition].edate);
+			$("#disValue").val(backCouponInfo[getPosition].discountValue);
+			
+			if(backCouponInfo[getPosition].sstatus == "active")
+			{ 
+				$("#statusActive").prop("checked",true);
+				//$("#statusActive").checked;
+			} else { 
+				$("#statusInactive").prop("checked",true);
+			}
+			//$("#records").hide();
+
+		}
+		
+	});
+////sorting area starting/////////////
+	$('td#sortByEAN').click(function(){
+		backCouponInfo.sort(function (a, b) {
+        if (a.eanCodeNum > b.eanCodeNum) {
+            return 1;
+        }
+        if (a.eanCodeNum < b.eanCodeNum) {
+            return -1;
+        }
+        return 0;
+    	});
+    	$("#records > tbody").empty();
+    	showRecords(backCouponInfo);
+		
+    });
+	$('td#sortByStartDate').click(function(){
+		backCouponInfo.sort(function (a, b) {
+		var dateStrA = a.sdate.replace( /(\d{2})\/(\d{2})\/(\d{4})/, "$2/$1/$3");
+		var dateStrB = b.sdate.replace( /(\d{2})\/(\d{2})\/(\d{4})/, "$2/$1/$3");
+        if (new Date(dateStrA) > new Date(dateStrB)) {
+            return 1;
+        }
+        if (new Date(dateStrA) < new Date(dateStrB)) {
+            return -1;
+        }
+        return 0;
+    	});
+    	$("#records > tbody").empty();
+    	showRecords(backCouponInfo);
+		
+    });
+    $('td#sortByEndDate').click(function(){
+		backCouponInfo.sort(function (a, b) {
+		var dateStrA = a.edate.replace( /(\d{2})\/(\d{2})\/(\d{4})/, "$2/$1/$3");
+		var dateStrB = b.edate.replace( /(\d{2})\/(\d{2})\/(\d{4})/, "$2/$1/$3");
+        if (new Date(dateStrA) > new Date(dateStrB)) {
+            return 1;
+        }
+        if (new Date(dateStrA) > new Date(dateStrB)) {
+            return -1;
+        }
+        return 0;
+    	});
+    	$("#records > tbody").empty();
+    	showRecords(backCouponInfo);
+		
+    });
+    $('td#sortName').click(function(){
+		backCouponInfo.sort(function(a, b){
+		 var nameA=a.actionName.toLowerCase(), nameB=b.actionName.toLowerCase()
+		 if (nameA < nameB) //sort string ascending
+		  return -1 
+		 if (nameA > nameB)
+		  return 1
+		 return 0 //default return value (no sorting)
+		})
+    	$("#records > tbody").empty();
+    	showRecords(backCouponInfo);
+		
+    });
+    $('td#sortByDiscount').click(function(){
+		backCouponInfo.sort(function (a, b) {
+        if (a.discountValue > b.discountValue) {
+            return 1;
+        }
+        if (a.discountValue < b.discountValue) {
+            return -1;
+        }
+        return 0;
+    	});
+    	$("#records > tbody").empty();
+    	showRecords(backCouponInfo);
+		
+    });
+    $('td#sortByStatus').click(function(){
+    	//alert('ddsdfda');
+		backCouponInfo.sort(function(a, b){
+		 var nameA=a.sstatus.toLowerCase(), nameB=b.sstatus.toLowerCase()
+		 if (nameA < nameB) //sort string ascending
+		  return -1 
+		 if (nameA > nameB)
+		  return 1
+		 return 0 //default return value (no sorting)
+		})
+    	$("#records > tbody").empty();
+    	showRecords(backCouponInfo);
+		
+    });
+	
+	function showRecords(x){
+	    localStorage.setItem("allEntries", JSON.stringify(x));
+	    var retrievedData = localStorage.getItem("allEntries");
+		backCouponInfo = JSON.parse(retrievedData);
+		 
+		for (var ii=0; ii<backCouponInfo.length; ii++){
+	    	var personObject = backCouponInfo[ii];
+	    	//alert(personObject.eanCodeNum);
+	    $('#records').append('<tbody><tr><td>'+personObject.eanCodeNum+'</td>'+
+		    '<td>'+personObject.actionName+'</td>'+
+		    '<td>'+personObject.sdate+'</td>'+
+		    '<td>'+personObject.edate+'</td>'+
+		    '<td>'+personObject.discountValue+'</td>'+
+		    '<td>'+personObject.sstatus+'</td>'+
+		    '<td><button type=button class="modify" id="editData" value="'+personObject.eanCodeNum+'")>EDIT</button></td>'+
+		    '<td><button type=button class="modify" id="removeRow" value="'+personObject.eanCodeNum+'">DELETE</button></td></tr></tbody>');
+	    }  
+	}
+	function findingPosition(y){
+		for (var h =0; h < backCouponInfo.length; h++)
+	   		if (backCouponInfo[h].eanCodeNum === y) {
+	   			getPosition = h;
+	   			return getPosition;
+		}
+	}
+
+
+
+
+	function generateBarcode(vpreRandom){
+		//if()
+        var value = vpreRandom;
+        var btype = 'ean13';
+        var renderer = 'css';
+        
+		var quietZone = false;
+        if ($("#quietzone").is(':checked') || $("#quietzone").attr('checked')){
+          quietZone = true;
+        }
+		
+        var settings = {
+          output:'css',
+          bgColor: '#FFF',
+          color: '#000',
+          barWidth: '1',
+          barHeight: '50',
+          moduleSize: '5',
+          posX: '10',
+          posY: '20',
+          addQuietZone:'1'
+        };
+        if ($("#rectangular").is(':checked') || $("#rectangular").attr('checked')){
+          value = {code:value, rect: true};
+        }
+        if (renderer == 'canvas'){
+          clearCanvas();
+          $("#barcodeTarget").hide();
+          $("#canvasTarget").show().barcode(value, btype, settings);
+        } else {
+          $("#canvasTarget").hide();
+          $("#barcodeTarget").html("").show().barcode(value, btype, settings);
+        }
+      }
+                
+      
+      
+</script>
+
+</body>
+</html>
